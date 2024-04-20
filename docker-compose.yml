@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+
+  frontend:
+    build:
+      context: frontend
+      target: dev
+      args:
+        - VUE_APP_BACKEND_URL=${VUE_APP_BACKEND_URL}
+    container_name: todo.frontend
+    depends_on:
+        - backend
+    ports:
+      - "8080:8080"
+
+  neo4j:
+    image: neo4j:5.15.0
+    hostname: ${NEO4_HOST:-neo4j}
+    container_name: todo.neo4j
+    environment:
+      - NEO4J_AUTH=$NEO4_USER/$NEO4_PASS
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
+    ports: 
+      - 7474:7474 # HTTP
+      - 7687:7687 # Bolt
+    volumes:   
+      - neo4j_data:/data
+      - ./neo4j/conf:/conf
+    tmpfs:
+      - /var/lib/neo4j/run
+    healthcheck:
+      test: wget http://localhost:7474 || exit 1
+      interval: 1s
+      timeout: 10s
+      retries: 20
+      start_period: 3s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "0.3m"
+  
+  backend:
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        PORT: ${BACK_SERVER_PORT}
+    container_name: todo.backend
+    hostname: ${BACK_HOST:-backend}
+    restart: unless-stopped
+    environment:
+      DB_HOST: ${NEO4_HOST:-neo4j}
+      DB_USERNAME: ${NEO4_USER:-neo4j}
+      DB_PASSWORD: ${NEO4_PASS:-neo4j}
+      SERVER_PORT: ${BACK_SERVER_PORT}
+    ports: 
+      - $BACK_SERVER_PORT:$BACK_SERVER_PORT
+    volumes:
+      - ./backend:/app
+      - backend_modules:/app/node_modules
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "0.3m"
+
+volumes:
+  neo4j_data:
+  backend_modules:
+
+networks:
+  todo:
+      external: true
+
